@@ -17,6 +17,16 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# ── Google credentials: write from env var if file path not present ───────
+# Allows passing credentials as GOOGLE_CREDENTIALS_CONTENT JSON string
+# (Railway env var) instead of a mounted file.
+_creds_content = os.getenv("GOOGLE_CREDENTIALS_CONTENT", "")
+if _creds_content:
+    _creds_path = "/tmp/google_credentials.json"
+    with open(_creds_path, "w") as _f:
+        _f.write(_creds_content)
+    os.environ["GOOGLE_CREDENTIALS_JSON"] = _creds_path
+
 # ── Rule 35: Startup environment validation ───────────────────────────────
 REQUIRED_ENV_VARS = ["ANTHROPIC_API_KEY", "WHATSAPP_PROVIDER", "ADMIN_SECRET"]
 PROVIDER_VARS = {
