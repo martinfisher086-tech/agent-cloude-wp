@@ -155,7 +155,6 @@ async def webhook_verificacion(request: Request):
 
 
 @app.post("/webhook")
-@limiter.limit(f"{os.getenv('RATE_LIMIT_PER_MINUTE', '20')}/minute")  # Rule 13
 async def webhook_handler(request: Request):
     """
     Main webhook handler.
