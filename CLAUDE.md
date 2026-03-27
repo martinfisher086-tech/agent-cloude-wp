@@ -1359,6 +1359,157 @@ Solo ejecutar si el usuario confirma que quiere hacer deploy.
 9. **Pregunta antes de sobreescribir** archivos existentes en /config o .env
 10. **Mantén simple**: no agregues features que el usuario no pidió
 11. **Valida en cada fase** antes de avanzar a la siguiente
+12. **Validación de firma en webhooks**: En el código generado para Whapi, verificar que el header `X-WHAPI-TOKEN` coincide con el token configurado en .env antes de procesar cualquier mensaje. Para Twilio, verificar la firma HMAC usando el Auth Token. Si la validación falla, retornar HTTP 401 sin procesar el mensaje.
+13. **Rate limiting obligatorio**: Al generar agent/main.py, instalar e integrar `slowapi` con un límite de 20 requests por minuto por IP en el endpoint /webhook. Agregar `slowapi>=0.1.9` a requirements.txt.
+14. **No exponer errores internos**: En todos los bloques `except`, loguear el error completo con `logger.error()` pero retornar al cliente únicamente un mensaje genérico como `{"status": "error", "message": "Error interno del servidor"}`. Nunca usar `detail=str(e)` en producción.
+15. **Dependencias con versiones exactas**: Al generar requirements.txt, usar versiones exactas (==) en lugar de mínimos (>=) para todas las dependencias.
+16. **Archivos /knowledge**: Recordarle al usuario que NO coloque en esa carpeta datos personales de clientes, contraseñas, ni información financiera sensible, ya que ese contenido se incorpora directamente al prompt del agente.
+
+### BLOCK B — Multi-tenant architecture
+
+17. **Tenant identification by destination phone number**: Every inbound webhook payload contains both the sender's number AND the WhatsApp Business number that received it. Use the destination number as the `tenant_id` lookup key. Store the tenant registry in `config/tenants.yaml` (loaded at startup, hot-reloadable via SIGHUP). Structure:
+    ```yaml
+    tenants:
+      "+5491155550001":
+        id: "cafeteria_ana"
+        name: "Cafetería Ana"
+        locale: "es-AR"
+        prompts_file: "config/tenants/cafeteria_ana/prompts.yaml"
+        knowledge_dir: "knowledge/cafeteria_ana/"
+        db_url: "sqlite+aiosqlite:///data/cafeteria_ana.db"
+        owner_phone: "+5491166660001"
+        business_hours: {start: "09:00", end: "21:00", timezone: "America/Argentina/Buenos_Aires", days: [1,2,3,4,5,6]}
+        escalation_cooldown_minutes: 30
+        max_history_messages: 20
+        summary_threshold: 40
+    ```
+
+18. **Complete tenant isolation**: Each tenant gets its own SQLite file (or Postgres schema in production). The `tenant_id` column is mandatory on every DB table. Queries MUST always filter by `tenant_id` — never allow cross-tenant data access. Generate a DB isolation test in `tests/test_isolation.py` that verifies this.
+
+19. **Tenant-aware dependency injection**: Pass a `TenantContext` dataclass (tenant_id, config, db_session) through the entire request lifecycle. Never use global state for tenant config. Example:
+    ```python
+    @dataclass
+    class TenantContext:
+        tenant_id: str
+        config: dict
+        locale: str        # e.g. "es-AR", "en-US", "pt-BR"
+        db_url: str
+        owner_phone: str
+        business_hours: dict
+        escalation_cooldown_minutes: int
+    ```
+
+20. **Unknown tenant handling**: If the destination number has no entry in `tenants.yaml`, log a warning and return HTTP 200 (never 4xx to the provider — it will retry forever). Do NOT process the message.
+
+21. **Tenant hot-reload**: Implement a `/admin/reload-tenants` POST endpoint protected by a `ADMIN_SECRET` env var. Calling it re-reads `tenants.yaml` without restarting the server. This lets you onboard a new client in under 60 seconds.
+
+22. **Per-tenant usage tracking**: After every Claude API call, insert a row into a `usage_log` table: (tenant_id, timestamp, input_tokens, output_tokens, model, conversation_id). This is the foundation for billing clients. Expose a `/admin/usage?tenant_id=X&month=YYYY-MM` endpoint that returns aggregated token counts and estimated cost (input: $3/M tokens, output: $15/M tokens for Sonnet).
+
+### BLOCK C — Human escalation system
+
+23. **Escalation signal via structured output**: Add this block to EVERY tenant's system prompt template:
+    ```
+    ## Escalation protocol
+    If ANY of these conditions are true, start your response with [ESCALATE]:
+    - Customer explicitly asks for a human or manager
+    - Customer expresses anger, frustration, or uses aggressive language 2+ times
+    - The request involves refunds, formal complaints, or legal threats
+    - The situation requires authorization you cannot provide
+    - You have been unable to resolve the issue after 3 exchanges
+
+    Format: [ESCALATE] <your empathetic response telling the customer a person will help>
+    Never mention the word "bot", "AI", or "automated" in your response.
+    ```
+
+24. **Escalation detection and orchestration**: In `main.py`, after receiving the Claude response, check if it starts with `[ESCALATE]`. If true: (a) Strip `[ESCALATE]` from the response before sending to customer. (b) Call `await pause_agent(phone, tenant_id, reason="auto_escalation")`. (c) Call `await notify_owner(tenant_ctx, customer_phone, last_message, conversation_summary)`. (d) Log the escalation event to `escalation_log` table. (e) Respect `escalation_cooldown_minutes` — if this phone was escalated within the cooldown window, skip owner notification (already notified) but keep agent paused.
+
+25. **Conversation state machine**: Add a `conversation_state` table with states: `ACTIVE` (agent responds), `PAUSED` (human handling), `CLOSED` (resolved).
+    ```python
+    class ConversationState(Base):
+        __tablename__ = "conversation_state"
+        id              = Column(Integer, primary_key=True)
+        phone           = Column(String(50), index=True)
+        tenant_id       = Column(String(100), index=True)
+        state           = Column(String(20), default="ACTIVE")  # ACTIVE | PAUSED | CLOSED
+        paused_at       = Column(DateTime, nullable=True)
+        paused_reason   = Column(String(200), nullable=True)
+        last_escalation = Column(DateTime, nullable=True)
+        human_agent     = Column(String(100), nullable=True)
+    ```
+
+26. **Owner notification message**: The notification sent to the owner's WhatsApp must include: customer phone, escalation reason, last 3 messages of the conversation, and the reactivation command. Format:
+    ```
+    ⚡ Escalation — [Tenant Name]
+    Customer: +54911XXXXXXXX
+    Reason: [auto-detected reason]
+
+    Last messages:
+    > Customer: [msg]
+    > Agent: [msg]
+    > Customer: [msg]
+
+    To reactivate the agent for this customer:
+    /resume +54911XXXXXXXX
+
+    To close the conversation:
+    /close +54911XXXXXXXX
+    ```
+
+27. **Owner command parser**: When a message arrives from the owner's phone number (matched against `owner_phone` in tenant config), intercept BEFORE routing to Claude: `/resume <phone>` → set state to ACTIVE, confirm to owner. `/close <phone>` → set state to CLOSED, send closing message to customer, confirm to owner. `/pause <phone>` → manually pause a conversation. `/status` → reply with count of PAUSED conversations and their phone numbers. `/usage` → reply with this month's token count and estimated cost. These commands must work even when the agent is paused.
+
+28. **Out-of-hours auto-response**: Check `business_hours` from tenant config before processing any message. If outside hours, respond with a configurable out-of-hours message (stored in `prompts.yaml`) WITHOUT calling the Claude API, saving tokens. Do NOT pause the agent — just skip the API call and send the template response. Example template in `prompts.yaml`:
+    ```yaml
+    out_of_hours_message: "Hola! Nuestro horario es {hours}. Te respondemos en cuanto abramos. Podés dejarnos tu consulta y la atendemos a primera hora."
+    ```
+
+29. **Escalation analytics**: Add to the `/admin/usage` endpoint: total escalations this month, average time-to-resolution (time between escalation and `/close` command), and top 3 escalation reasons. This data is a selling point for business owners.
+
+### BLOCK D — Reliability and UX
+
+30. **Message deduplication**: Webhook providers sometimes deliver the same message twice (retries). Store `message_id` in a `processed_messages` table with a TTL of 24 hours. If `message_id` already exists, return HTTP 200 immediately without processing. This prevents double-responses.
+
+31. **Typing indicator**: For providers that support it (Whapi supports it), send a "typing..." status to WhatsApp immediately after receiving the message, before calling Claude. Implement as `await proveedor.send_typing(phone)` in the provider base class (no-op default, implemented for Whapi).
+
+32. **Circuit breaker for Claude API**: If the Anthropic API returns 3 consecutive errors (5xx or timeout), activate circuit breaker: for the next 60 seconds, skip Claude and respond with `config["error_message"]`. Log each activation. Use a simple in-memory counter per process (no Redis required for this).
+
+33. **Conversation summarization**: When a conversation exceeds `summary_threshold` messages (default: 40), call Claude with a summarization prompt to compress the older half into a single summary message stored as `role: "system"` at the start of the history. This keeps context window costs bounded without losing memory.
+    ```python
+    SUMMARIZE_PROMPT = """Summarize this WhatsApp conversation history into a single
+    paragraph of key facts: customer name (if mentioned), what they asked about,
+    what was resolved, and any pending items. Be factual, no commentary. Max 150 words."""
+    ```
+
+34. **Media message handling**: When a customer sends an image, voice note, document, or sticker (non-text message), do NOT pass it to Claude or crash. Instead respond with a configurable `media_fallback_message` from `prompts.yaml`.
+
+35. **Startup environment validation**: On startup, before accepting any requests, validate that ALL required env vars exist and are non-empty. Print a clear error and exit with code 1 if any are missing. Never let the server start in a broken state:
+    ```python
+    REQUIRED_ENV_VARS = ["ANTHROPIC_API_KEY", "WHATSAPP_PROVIDER", "ADMIN_SECRET"]
+    PROVIDER_VARS = {"whapi": ["WHAPI_TOKEN"], "meta": ["META_ACCESS_TOKEN",
+                    "META_PHONE_NUMBER_ID", "META_VERIFY_TOKEN"],
+                    "twilio": ["TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_PHONE_NUMBER"]}
+    ```
+
+36. **Structured JSON logging in production**: When `ENVIRONMENT=production`, switch to JSON log format (one JSON object per line) with fields: timestamp, level, tenant_id, customer_phone (last 4 digits only for privacy), event, duration_ms. This makes logs parseable by Railway's log viewer and any external observability tool.
+
+### BLOCK E — Global scalability
+
+37. **Locale-aware responses**: Every system prompt template must include the locale variable: `Respond ALWAYS in {locale} language and cultural context.` Default locale is `es-AR` (Argentine Spanish). Each tenant in `tenants.yaml` can override this. Supported locales at launch: es-AR, es-MX, es-ES, en-US, pt-BR. Adding a new locale only requires adding a tenant entry — no code changes.
+
+38. **Timezone-aware business hours**: All time comparisons must use the tenant's configured timezone (from `tenants.yaml`). Never use UTC for business hours checks. Use the `zoneinfo` stdlib module (Python 3.9+). Add `tzdata` to requirements.txt for Windows compatibility.
+
+39. **Currency and number formatting**: The system prompt template must include locale formatting hints. For es-AR: prices use ARS with `.` as thousands separator and `,` as decimal. For en-US: USD with standard formatting. Store format strings in `prompts.yaml` under `locale_hints` and inject into the system prompt.
+
+40. **README internationalization**: Generate `README.md` in English as the primary document. Generate `README.es.md` in Spanish (Argentine) as the secondary. Both must stay in sync. The English README is required for global sales/GitHub visibility.
+
+### BLOCK F — Developer experience
+
+41. **Environment template completeness**: `.env.example` must document every possible variable across all providers and all feature flags, with inline comments explaining each one. A developer should be able to configure the entire system from this file alone.
+
+42. **Test coverage for critical paths**: Generate tests for: `test_isolation.py` (tenant data never crosses boundaries), `test_escalation.py` ([ESCALATE] signal triggers correct state machine), `test_dedup.py` (duplicate message_id is ignored), `test_circuit_breaker.py` (3 API failures activate the breaker), `test_business_hours.py` (out-of-hours messages skip Claude API). All tests must be runnable with `pytest tests/` with no external dependencies.
+
+43. **Makefile for common operations**: Generate a `Makefile` with targets: `make dev` (start with hot reload), `make test` (run pytest), `make logs` (tail docker logs), `make shell` (open Python shell with app context), `make add-tenant` (interactive script to add a new tenant to tenants.yaml).
+
+44. **Version endpoint**: Add `GET /version` that returns `{"version": "1.0.0", "model": "claude-sonnet-4-6", "tenants": N, "uptime_seconds": N}`. This is used for health monitoring and to verify deploys went through.
 
 ---
 

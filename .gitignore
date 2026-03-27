@@ -1,12 +1,14 @@
-# Secretos — NUNCA subir a GitHub
+# ── Secretos — NUNCA subir ────────────────────────────────────────────────
 .env
+config/*.json
 
-# Base de datos local
+# ── Base de datos local ───────────────────────────────────────────────────
 *.db
 *.sqlite
 *.sqlite3
+data/
 
-# Python
+# ── Python ────────────────────────────────────────────────────────────────
 __pycache__/
 *.py[cod]
 *.pyo
@@ -17,34 +19,17 @@ env/
 dist/
 build/
 
-# Knowledge (archivos privados del negocio)
+# ── Knowledge (archivos privados del negocio) ─────────────────────────────
 knowledge/*
 !knowledge/.gitkeep
 
-# Archivos generados por Claude Code durante onboarding
-agent/
-config/
-tests/
-requirements.txt
-Dockerfile
-docker-compose.yml
-
-# Session state
-config/session.yaml
-
-# OS
+# ── OS / IDE ─────────────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
-
-# IDE
 .vscode/
 .idea/
 *.swp
-*.swo
 *~
 
-# Docker
-.dockerignore
-
-# Node (si se usa para Claude Code)
-node_modules/
+# ── Pytest / cache ────────────────────────────────────────────────────────
+.pytest_cache/
