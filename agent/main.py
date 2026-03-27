@@ -15,6 +15,16 @@ from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from dotenv import load_dotenv
 
+# ── TEMP DEBUG — remove after Railway diagnosis ───────────────────────────
+import os as _os
+print("DEBUG ENV CHECK:", flush=True)
+print(f"  ANTHROPIC_API_KEY present: {'ANTHROPIC_API_KEY' in _os.environ}", flush=True)
+print(f"  WHATSAPP_PROVIDER present: {'WHATSAPP_PROVIDER' in _os.environ}", flush=True)
+print(f"  ADMIN_SECRET present: {'ADMIN_SECRET' in _os.environ}", flush=True)
+print(f"  WHAPI_TOKEN present: {'WHAPI_TOKEN' in _os.environ}", flush=True)
+print(f"  Matching keys: {[k for k in _os.environ if any(x in k for x in ['WHATSAPP','ANTHROPIC','ADMIN','WHAPI'])]}", flush=True)
+# ── END TEMP DEBUG ────────────────────────────────────────────────────────
+
 load_dotenv(override=False)
 
 # ── Google credentials: write from env var if file path not present ───────
