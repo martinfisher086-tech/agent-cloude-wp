@@ -15,7 +15,7 @@ from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(override=False)
 
 # ── Google credentials: write from env var if file path not present ───────
 # Allows passing credentials as GOOGLE_CREDENTIALS_CONTENT JSON string

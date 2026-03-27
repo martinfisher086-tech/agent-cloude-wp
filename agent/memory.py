@@ -9,7 +9,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy import String, Text, DateTime, Integer, select, delete
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(override=False)
 logger = logging.getLogger("agentkit")
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./agentkit.db")
