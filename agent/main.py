@@ -10,9 +10,6 @@ from datetime import datetime, timezone
 
 from fastapi import FastAPI, Request, HTTPException, Depends
 from fastapi.responses import PlainTextResponse
-from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.util import get_remote_address
-from slowapi.errors import RateLimitExceeded
 from dotenv import load_dotenv
 
 # ── TEMP DEBUG — remove after Railway diagnosis ───────────────────────────
@@ -101,9 +98,6 @@ import yaml
 proveedor = obtener_proveedor()
 _start_time = time.time()
 
-# ── Rule 13: Rate limiter (20 requests/minute/IP) ─────────────────────────
-limiter = Limiter(key_func=get_remote_address)
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -115,8 +109,6 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="AgentKit — Salón Bella", version="1.0.0", lifespan=lifespan)
-app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 
 def _load_prompts() -> dict:
@@ -163,6 +155,7 @@ async def webhook_handler(request: Request):
     30 (dedup), 31 (typing), 34 (media), 36 (JSON logging).
     """
     t0 = time.time()
+    logger.info(f"POST /webhook received | method={request.method} | headers={dict(request.headers)}")
     try:
         # Rule 12: Validate webhook signature BEFORE reading payload
         if hasattr(proveedor, '_validate_token_header'):
