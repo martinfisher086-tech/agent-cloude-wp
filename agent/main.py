@@ -57,6 +57,8 @@ def _validate_env():
 
 _validate_env()
 
+PORT = int(os.getenv("PORT", 8000))
+
 # ── Rule 36: Structured JSON logging in production ────────────────────────
 ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
 
@@ -108,7 +110,7 @@ async def lifespan(app: FastAPI):
     await inicializar_db()
     load_tenants()
     setup_sighup_handler()
-    logger.info(f"AgentKit started | provider={proveedor.__class__.__name__} | env={ENVIRONMENT}")
+    logger.info(f"AgentKit started | provider={proveedor.__class__.__name__} | env={ENVIRONMENT} | port={PORT}")
     yield
 
 
