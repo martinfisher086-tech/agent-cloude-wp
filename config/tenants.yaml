@@ -3,14 +3,15 @@
 # Hot-reloadable via POST /admin/reload-tenants
 
 tenants:
-  "+5491100000001":
+  "+5491123326985":
     id: "salon_bella"
     name: "Salón Bella"
+    whatsapp_business_number: "+5491123326985"
     locale: "es-AR"
     prompts_file: "config/prompts.yaml"
     knowledge_dir: "knowledge/"
     db_url: "sqlite+aiosqlite:///data/salon_bella.db"
-    owner_phone: "+5491100000002"
+    owner_phone: "+5491127509727"
     business_hours:
       start: "09:00"
       end: "20:00"
