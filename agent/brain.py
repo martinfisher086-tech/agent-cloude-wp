@@ -3,8 +3,24 @@ import os
 import time
 import logging
 import yaml
+from datetime import datetime
+from zoneinfo import ZoneInfo
 from anthropic import AsyncAnthropic
 from dotenv import load_dotenv
+
+_TZ_AR = ZoneInfo("America/Argentina/Buenos_Aires")
+_DIAS   = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
+_MESES  = ["enero", "febrero", "marzo", "abril", "mayo", "junio",
+           "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
+
+
+def _fecha_hoy_ar() -> str:
+    """Retorna la fecha actual en Buenos Aires como texto legible.
+    Se llama en cada request — nunca en startup."""
+    now = datetime.now(_TZ_AR)
+    dia_semana = _DIAS[now.weekday()]      # weekday(): 0=lunes … 6=domingo
+    mes        = _MESES[now.month - 1]
+    return f"Hoy es {dia_semana} {now.day} de {mes} de {now.year} (Argentina, GMT-3)."
 
 load_dotenv(override=False)
 logger = logging.getLogger("agentkit")
@@ -39,8 +55,15 @@ def _cargar_config() -> dict:
 def cargar_system_prompt(locale: str = "es-AR") -> str:
     config = _cargar_config()
     prompt = config.get("system_prompt", "Sos una asistente útil. Respondé en español.")
-    # Rule 37: inject locale into system prompt
-    return prompt.replace("{locale}", locale)
+    # Rule 37: inject locale
+    prompt = prompt.replace("{locale}", locale)
+    # Inyectar fecha actual al inicio — se evalúa en cada request, no en startup
+    fecha_ctx = (
+        f"{_fecha_hoy_ar()} "
+        f"Cuando el cliente diga 'mañana', 'el viernes', 'la semana que viene' u otras "
+        f"referencias relativas, calculá la fecha exacta en DD/MM/YYYY basándote en la fecha actual.\n\n"
+    )
+    return fecha_ctx + prompt
 
 
 def obtener_mensaje_error() -> str:
