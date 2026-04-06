@@ -163,7 +163,7 @@ def _parsear_turno(respuesta: str) -> tuple[dict | None, str]:
     # Validar que tenga los campos mínimos
     required = {"servicio", "fecha", "hora", "cliente", "tel"}
     if not required.issubset(campos):
-        logger.warning(f"[TURNO] bloque incompleto — campos presentes: {set(campos)}")
+        print(f"[DIAG] TURNO bloque incompleto — campos presentes: {set(campos)}", flush=True)
         return None, clean_response
 
     return campos, clean_response
@@ -279,12 +279,12 @@ async def webhook_handler(request: Request):
             )
 
             # LOG DIAGNÓSTICO — raw response antes de cualquier procesamiento
-            logger.info(f"RAW_CLAUDE_RESPONSE: {respuesta!r}")
+            print(f"[DIAG] RAW_CLAUDE_RESPONSE: {respuesta!r}", flush=True)
 
             # Detección de señal [TURNO:] — persiste el turno antes de responder al cliente
             turno_campos, respuesta = _parsear_turno(respuesta)
             if turno_campos:
-                logger.info(f"[TURNO] bloque parseado OK: {turno_campos}")
+                print(f"[DIAG] TURNO bloque parseado OK: {turno_campos}", flush=True)
                 try:
                     turno = await construir_turno(
                         servicio=turno_campos["servicio"],
@@ -296,12 +296,12 @@ async def webhook_handler(request: Request):
                     )
                     sheets_ok = await get_sheets_adapter().escribir_turno(turno)
                     if sheets_ok:
-                        logger.info(f"Turno {turno['id']} escrito en Sheets | tenant={tenant_id}")
+                        print(f"[DIAG] Turno {turno['id']} escrito en Sheets | tenant={tenant_id}", flush=True)
                     else:
-                        logger.warning(f"Turno {turno['id']} guardado en SQLite (Sheets falló) | tenant={tenant_id}")
+                        print(f"[DIAG] Turno {turno['id']} guardado en SQLite (Sheets falló) | tenant={tenant_id}", flush=True)
                 except Exception as e:
                     # Falla silenciosa: el cliente siempre recibe su confirmación
-                    logger.error(f"Error al persistir turno: {e}")
+                    print(f"[DIAG] ERROR al persistir turno: {e}", flush=True)
 
             # Rule 24: Escalation detection
             if respuesta.startswith("[ESCALATE]"):
