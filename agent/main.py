@@ -18,6 +18,8 @@ load_dotenv(override=False)
 # Allows passing credentials as GOOGLE_CREDENTIALS_CONTENT JSON string
 # (Railway env var) instead of a mounted file.
 _creds_content = os.getenv("GOOGLE_CREDENTIALS_CONTENT", "")
+print(f"[DIAG] CREDENTIALS LENGTH: {len(_creds_content)}", flush=True)
+print(f"[DIAG] CREDENTIALS PREVIEW: '{_creds_content[:100]}'", flush=True)
 if _creds_content:
     _creds_path = "/tmp/google_credentials.json"
     with open(_creds_path, "w") as _f:
