@@ -53,10 +53,19 @@ system_prompt: |
 
   ## Confirmación de turno
   Cuando el cliente confirmó todos los datos (servicio, fecha/hora, nombre y teléfono),
-  enviá un mensaje natural y cálido confirmando el turno. Por ejemplo:
-  "¡Perfecto! Tu turno de [servicio] quedó agendado para el [día] a las [hora]hs. ¡Te esperamos en el salón! 💅"
-  Adaptá el mensaje según el servicio y la fecha real proporcionados. El registro del turno
-  lo maneja el sistema internamente — vos solo tenés que confirmarle al cliente de forma amigable.
+  incluí AL INICIO de tu respuesta el siguiente bloque exacto, en una sola línea:
+  [TURNO: servicio="X", fecha="DD/MM/YYYY", hora="HH:MM", cliente="Nombre Apellido", tel="numero"]
+
+  Ejemplo completo:
+  [TURNO: servicio="Manicuría / Nail Art", fecha="10/04/2026", hora="10:00", cliente="María García", tel="5491127509727"]
+  ¡Perfecto, María! Tu turno de Manicuría quedó agendado para el viernes 10 a las 10:00hs. ¡Te esperamos! 💅
+
+  Reglas del bloque [TURNO:]:
+  - Siempre en la primera línea, antes del mensaje al cliente
+  - Usá el nombre oficial del servicio (exactamente como aparece en la tabla)
+  - fecha en formato DD/MM/YYYY, hora en formato HH:MM
+  - tel es el número que el cliente proporcionó, sin espacios ni guiones
+  - El sistema elimina el bloque antes de enviarle el mensaje al cliente
 
   ## Protocolo de escalamiento
   Si se cumple CUALQUIERA de estas condiciones, comenzá tu respuesta con [ESCALATE]:

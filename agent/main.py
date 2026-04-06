@@ -83,6 +83,8 @@ from agent.memory import (
 from agent.providers import obtener_proveedor
 from agent.tenant import load_tenants, get_tenant_context, get_tenant_by_token, get_tenant_count, setup_sighup_handler, is_within_business_hours
 from agent.escalation import handle_escalation, handle_owner_command
+from agent.tools import construir_turno, get_sheets_adapter
+import re
 import yaml
 
 proveedor = obtener_proveedor()
@@ -134,6 +136,37 @@ async def webhook_verificacion(request: Request):
     if result is not None:
         return PlainTextResponse(str(result))
     return {"status": "ok"}
+
+
+def _parsear_turno(respuesta: str) -> tuple[dict | None, str]:
+    """
+    Detecta y extrae el bloque [TURNO: ...] al inicio de la respuesta de Claude.
+    Retorna (campos_dict, respuesta_limpia).
+    Si no hay bloque, retorna (None, respuesta_original).
+    """
+    if not respuesta.startswith("[TURNO:"):
+        return None, respuesta
+
+    # Extraer el bloque hasta el primer ']'
+    end = respuesta.find("]")
+    if end == -1:
+        return None, respuesta
+
+    bloque = respuesta[1:end]  # "TURNO: servicio="X", fecha="Y", ..."
+    clean_response = respuesta[end + 1:].strip()
+
+    # Parsear pares clave="valor"
+    campos = {}
+    for match in re.finditer(r'(\w+)="([^"]*)"', bloque):
+        campos[match.group(1)] = match.group(2)
+
+    # Validar que tenga los campos mínimos
+    required = {"servicio", "fecha", "hora", "cliente", "tel"}
+    if not required.issubset(campos):
+        logger.warning(f"[TURNO] bloque incompleto — campos presentes: {set(campos)}")
+        return None, clean_response
+
+    return campos, clean_response
 
 
 @app.post("/webhook")
@@ -244,6 +277,27 @@ async def webhook_handler(request: Request):
                 output_tokens=out_tok,
                 conversation_id=msg.telefono,
             )
+
+            # Detección de señal [TURNO:] — persiste el turno antes de responder al cliente
+            turno_campos, respuesta = _parsear_turno(respuesta)
+            if turno_campos:
+                try:
+                    turno = await construir_turno(
+                        servicio=turno_campos["servicio"],
+                        fecha=turno_campos["fecha"],
+                        hora=turno_campos["hora"],
+                        cliente=turno_campos["cliente"],
+                        telefono=turno_campos["tel"],
+                        tenant=tenant_id,
+                    )
+                    sheets_ok = await get_sheets_adapter().escribir_turno(turno)
+                    if sheets_ok:
+                        logger.info(f"Turno {turno['id']} escrito en Sheets | tenant={tenant_id}")
+                    else:
+                        logger.warning(f"Turno {turno['id']} guardado en SQLite (Sheets falló) | tenant={tenant_id}")
+                except Exception as e:
+                    # Falla silenciosa: el cliente siempre recibe su confirmación
+                    logger.error(f"Error al persistir turno: {e}")
 
             # Rule 24: Escalation detection
             if respuesta.startswith("[ESCALATE]"):
