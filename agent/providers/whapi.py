@@ -27,12 +27,30 @@ class ProveedorWhapi(ProveedorWhatsApp):
     async def parsear_webhook(self, request: Request) -> list[MensajeEntrante]:
         """Parse Whapi.cloud webhook payload."""
         body = await request.json()
+
+        # Log payload completo para diagnóstico (se puede bajar a DEBUG cuando esté estable)
+        logger.info(f"Whapi raw payload: {body}")
+
         mensajes = []
 
         for msg in body.get("messages", []):
             msg_type = msg.get("type", "text")
-            # Determine destination number (the Business number that received it)
-            destino = body.get("channelId", "") or msg.get("chatId", "").split("@")[0]
+
+            # Determinar número de destino (el número del negocio que recibió el mensaje).
+            # Orden de prioridad:
+            #   1. msg["to"]       — destinatario directo del mensaje (más confiable)
+            #   2. body["channelId"] — ID del canal en Whapi (puede ser número o hash)
+            #   3. msg["chatId"]   — JID del chat (es el remitente en 1:1, NO usar como destino)
+            raw_to = msg.get("to", "")
+            raw_channel = body.get("channelId", "")
+            destino = (
+                raw_to.split("@")[0]
+                or raw_channel.split("@")[0]
+            )
+            logger.info(
+                f"Whapi destino resolution — msg.to={raw_to!r} "
+                f"body.channelId={raw_channel!r} → destino={destino!r}"
+            )
 
             # Map media types to our internal type
             tipo = "media" if msg_type in MEDIA_TYPES else "text"
