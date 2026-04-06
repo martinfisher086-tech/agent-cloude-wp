@@ -6,6 +6,7 @@ import uuid
 import logging
 import asyncio
 import unicodedata
+import traceback
 from datetime import datetime, timezone
 from typing import Optional
 from zoneinfo import ZoneInfo
@@ -300,8 +301,8 @@ class GoogleSheetsAdapter:
             return True
 
         except Exception as e:
-            # Rule 14: log full error internally, don't expose to client
-            logger.error(f"Google Sheets write failed (falling back to SQLite): {e}")
+            print(f"[DIAG] SHEETS ERROR: {e}", flush=True)
+            print(f"[DIAG] SHEETS TRACEBACK: {traceback.format_exc()}", flush=True)
             turno["_sheets_synced"] = 0
             await _save_backup(turno)
             return False
