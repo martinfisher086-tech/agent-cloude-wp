@@ -343,3 +343,14 @@ async def admin_usage(request: Request, tenant_id: str = "", month: str = ""):
         },
         "escalations": {"total": esc_count},
     }
+
+
+# ── Rutas adicionales de Whapi.cloud ──────────────────────────────────────
+# Whapi envía webhooks a rutas específicas según el tipo de evento.
+# Todas apuntan al mismo handler central.
+
+@app.post("/webhook/messages")
+@app.post("/webhook/chats")
+@app.patch("/webhook/chats")
+async def webhook_handler_extended(request: Request):
+    return await webhook_handler(request)
