@@ -162,9 +162,11 @@ async def webhook_handler(request: Request):
             phone_tail = msg.telefono[-4:] if len(msg.telefono) >= 4 else msg.telefono
 
             # Rule 17-20: Tenant resolution
-            tenant_ctx = get_tenant_context(msg.destino or msg.telefono)
+            lookup_key = msg.destino or msg.telefono
+            logger.info(f"Tenant lookup — destino={msg.destino!r} telefono={msg.telefono!r} → key={lookup_key!r}")
+            tenant_ctx = get_tenant_context(lookup_key)
             if tenant_ctx is None:
-                # Rule 20: Unknown tenant → HTTP 200, no processing
+                logger.warning(f"Unknown tenant for key={lookup_key!r} — dropping message")
                 return {"status": "ok"}
 
             tenant_id = tenant_ctx.tenant_id

@@ -28,8 +28,9 @@ class ProveedorWhapi(ProveedorWhatsApp):
         """Parse Whapi.cloud webhook payload."""
         body = await request.json()
 
-        # Log payload completo para diagnóstico (se puede bajar a DEBUG cuando esté estable)
-        logger.info(f"Whapi raw payload: {body}")
+        # Log payload completo para diagnóstico
+        import json
+        logger.info(f"FULL PAYLOAD:\n{json.dumps(body, indent=2, ensure_ascii=False)}")
 
         mensajes = []
 
