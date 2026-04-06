@@ -81,7 +81,7 @@ from agent.memory import (
     is_duplicate_message, get_conversation_state, log_usage,
 )
 from agent.providers import obtener_proveedor
-from agent.tenant import load_tenants, get_tenant_context, get_tenant_count, setup_sighup_handler, is_within_business_hours
+from agent.tenant import load_tenants, get_tenant_context, get_tenant_by_token, get_tenant_count, setup_sighup_handler, is_within_business_hours
 from agent.escalation import handle_escalation, handle_owner_command
 import yaml
 
@@ -162,11 +162,18 @@ async def webhook_handler(request: Request):
             phone_tail = msg.telefono[-4:] if len(msg.telefono) >= 4 else msg.telefono
 
             # Rule 17-20: Tenant resolution
-            lookup_key = msg.destino or msg.telefono
-            logger.info(f"Tenant lookup — destino={msg.destino!r} telefono={msg.telefono!r} → key={lookup_key!r}")
-            tenant_ctx = get_tenant_context(lookup_key)
+            # Primer intento: lookup por número de destino
+            tenant_ctx = None
+            if msg.destino:
+                logger.info(f"Tenant lookup by destino={msg.destino!r}")
+                tenant_ctx = get_tenant_context(msg.destino)
+            # Fallback: sandbox de Whapi no envía destino → lookup por WHAPI_TOKEN
             if tenant_ctx is None:
-                logger.warning(f"Unknown tenant for key={lookup_key!r} — dropping message")
+                whapi_token = os.getenv("WHAPI_TOKEN", "")
+                logger.info(f"Destino vacío — fallback lookup por whapi_token")
+                tenant_ctx = get_tenant_by_token(whapi_token)
+            if tenant_ctx is None:
+                logger.warning(f"Unknown tenant — destino={msg.destino!r} telefono={msg.telefono!r} — dropping message")
                 return {"status": "ok"}
 
             tenant_id = tenant_ctx.tenant_id

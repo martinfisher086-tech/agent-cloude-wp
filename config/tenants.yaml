@@ -21,6 +21,7 @@ tenants:
       start: "09:00"
       end: "17:00"
       days: [6]
+    whapi_token: "XGjPZkzM3BhZs2DQ6nmSxWL2cpCyG1Cv"
     escalation_cooldown_minutes: 30
     max_history_messages: 20
     summary_threshold: 40

@@ -77,6 +77,31 @@ def get_tenant_context(destination_phone: str) -> TenantContext | None:
     )
 
 
+def get_tenant_by_token(token: str) -> TenantContext | None:
+    """
+    Fallback lookup por whapi_token cuando destino viene vacío (sandbox de Whapi).
+    Itera el registro buscando el tenant cuyo whapi_token coincida con el token dado.
+    """
+    if not token:
+        return None
+    for config in _tenant_registry.values():
+        if config.get("whapi_token") == token:
+            return TenantContext(
+                tenant_id=config.get("id", ""),
+                name=config.get("name", "Unknown"),
+                locale=config.get("locale", "es-AR"),
+                db_url=config.get("db_url", "sqlite+aiosqlite:///data/default.db"),
+                owner_phone=config.get("owner_phone", ""),
+                business_hours=config.get("business_hours", {}),
+                escalation_cooldown_minutes=config.get("escalation_cooldown_minutes", 30),
+                max_history_messages=config.get("max_history_messages", 20),
+                summary_threshold=config.get("summary_threshold", 40),
+                prompts_file=config.get("prompts_file", "config/prompts.yaml"),
+                knowledge_dir=config.get("knowledge_dir", "knowledge/"),
+            )
+    return None
+
+
 def get_tenant_count() -> int:
     return len(_tenant_registry)
 
