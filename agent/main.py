@@ -278,9 +278,13 @@ async def webhook_handler(request: Request):
                 conversation_id=msg.telefono,
             )
 
+            # LOG DIAGNÓSTICO — raw response antes de cualquier procesamiento
+            logger.info(f"RAW_CLAUDE_RESPONSE: {respuesta!r}")
+
             # Detección de señal [TURNO:] — persiste el turno antes de responder al cliente
             turno_campos, respuesta = _parsear_turno(respuesta)
             if turno_campos:
+                logger.info(f"[TURNO] bloque parseado OK: {turno_campos}")
                 try:
                     turno = await construir_turno(
                         servicio=turno_campos["servicio"],
