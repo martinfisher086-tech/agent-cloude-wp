@@ -7,7 +7,7 @@ import logging
 import asyncio
 import unicodedata
 import traceback
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Optional
 from zoneinfo import ZoneInfo
 import yaml
@@ -209,6 +209,41 @@ async def _cancel_backup(turno_id: str) -> bool:
     return True
 
 
+# ── Deduplicación de turnos ───────────────────────────────────────────────
+
+async def _es_turno_duplicado(telefono: str, fecha: str, hora: str, servicio: str) -> bool:
+    """
+    Retorna True si ya existe un turno con los mismos datos creado en los
+    últimos 5 minutos. Previene doble agendamiento por webhooks duplicados.
+    """
+    await _init_backup_table()
+    session_factory = _get_backup_session()
+    ventana = datetime.now(_TZ_BA) - timedelta(minutes=5)
+
+    async with session_factory() as session:
+        result = await session.execute(
+            select(TurnoBackup).where(
+                TurnoBackup.telefono == telefono,
+                TurnoBackup.fecha == fecha,
+                TurnoBackup.hora == hora,
+                TurnoBackup.servicio == servicio,
+            )
+        )
+        filas = result.scalars().all()
+
+    for fila in filas:
+        try:
+            # agendado_en formato: "DD/MM/YYYY HH:MMhs"
+            agendado = datetime.strptime(fila.agendado_en, "%d/%m/%Y %H:%Mhs")
+            agendado = agendado.replace(tzinfo=_TZ_BA)
+            if agendado >= ventana:
+                return True
+        except ValueError:
+            pass  # formato inesperado → no bloquear
+
+    return False
+
+
 # ── Google Sheets adapter ──────────────────────────────────────────────────
 
 class GoogleSheetsAdapter:
@@ -287,9 +322,18 @@ class GoogleSheetsAdapter:
         Falls back to SQLite-only if Sheets is unavailable.
         Returns True if written to Sheets, False if fallback-only.
         """
-        # Always write backup first so it's never lost
         turno.setdefault("id", str(uuid.uuid4())[:8].upper())
         turno.setdefault("agendado_en", datetime.now(timezone.utc).isoformat())
+
+        # Deduplicación: evitar doble agendamiento por webhooks duplicados
+        if await _es_turno_duplicado(
+            telefono=turno.get("telefono", ""),
+            fecha=turno.get("fecha", ""),
+            hora=turno.get("hora", ""),
+            servicio=turno.get("servicio", ""),
+        ):
+            print(f"[DIAG] Turno duplicado detectado — ignorando (tel={turno.get('telefono')} {turno.get('fecha')} {turno.get('hora')})", flush=True)
+            return True
 
         try:
             sheet = await asyncio.to_thread(self._get_sheet)
